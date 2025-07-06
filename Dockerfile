@@ -12,7 +12,9 @@ RUN set -ex; \
       supervisor \
       x11vnc \
       xterm \
-      xvfb
+      xvfb \
+      chromium \
+      nginx
 
 # Setup demo environment variables
 ENV HOME=/root \
@@ -25,6 +27,9 @@ ENV HOME=/root \
     DISPLAY_HEIGHT=768 \
     RUN_XTERM=yes \
     RUN_FLUXBOX=yes
+
 COPY . /app
+COPY nginx.conf /etc/nginx/nginx.conf
+
 CMD ["/app/entrypoint.sh"]
-EXPOSE 8080
+EXPOSE 8080 9223
