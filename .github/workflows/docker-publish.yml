@@ -6,14 +6,17 @@ name: Docker
 # documentation.
 
 on:
-  schedule:
-    - cron: '15 15 * * *'
   push:
     branches: [ "main" ]
-    # Publish semver tags as releases.
-    tags: [ 'v*.*.*' ]
+    tags: [ 'v*.*.*' ]  # Automatically builds and pushes images for version tags
   pull_request:
     branches: [ "main" ]
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: 'Version bump type (patch, minor, major)'
+        required: true
+        default: 'patch'
 
 env:
   # Use docker.io for Docker Hub if empty
@@ -23,8 +26,45 @@ env:
 
 
 jobs:
-  build:
+  version:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
+      - name: Set up Git config
+        run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+
+      - name: Bump version and push tag
+        id: bump
+        run: |
+          current=$(git tag --sort=-creatordate | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -n 1 || echo "v0.0.0")
+          echo "Current version: $current"
+          
+          IFS='.' read -r -a parts <<< "${current#v}"
+          major=${parts[0]}
+          minor=${parts[1]}
+          patch=${parts[2]}
+
+          case "${{ github.event.inputs.bump }}" in
+            major) ((major++)); minor=0; patch=0 ;;
+            minor) ((minor++)); patch=0 ;;
+            patch|*) ((patch++)) ;;
+          esac
+
+          new_tag="v$major.$minor.$patch"
+          echo "New tag: $new_tag"
+
+          git tag "$new_tag"
+          git push origin "$new_tag"
+  build:
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -58,8 +98,8 @@ jobs:
         uses: docker/login-action@343f7c4344506bcbf9b4de18042ae17996df046d # v3.0.0
         with:
           registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          username: ${{ secrets.USERNAME }}
+          password: ${{ secrets.PASSWORD }}
 
       # Extract metadata (tags, labels) for Docker
       # https://github.com/docker/metadata-action
@@ -68,6 +108,8 @@ jobs:
         uses: docker/metadata-action@96383f45573cb7f253c731d3b3ab81c87ef81934 # v5.0.0
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=tag
 
       # Build and push Docker image with Buildx (don't push on PR)
       # https://github.com/docker/build-push-action
